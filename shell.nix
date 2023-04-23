@@ -7,5 +7,6 @@ pkgs.mkShell {
     pkgs.openssl
     pkgs.openssl.dev
     pkgs.pkgconfig
+    pkgs.rustfmt
   ];
 }
