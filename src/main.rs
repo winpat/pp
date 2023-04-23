@@ -36,6 +36,12 @@ enum Commands {
         #[arg(short, long)]
         document_id: u64,
 	},
+    /// Download the OCR tokens of a document
+    Tokens {
+        /// Id of the document
+        #[arg(short, long)]
+        document_id: u64,
+    },
 	Config {
 		#[command(subcommand)]
 		command: Option<ConfigCommands>,
@@ -65,6 +71,7 @@ fn main() {
     match &cli.command {
         Some(Commands::Images { document_id }) => api_client.get_images(*document_id),
         Some(Commands::File { document_id }) => api_client.get_source_files(*document_id),
+        Some(Commands::Tokens { document_id }) => api_client.get_tokens(*document_id),
         Some(Commands::Config { command }) => {
 			match command {
 				Some(ConfigCommands::List) => print_profiles(),
@@ -81,6 +88,24 @@ struct FileResource {
 	url: String,
 	mime_type: String,
 	file_type: String,
+}
+
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct Rectangle {
+	top: f64,
+	bottom: f64,
+	left: f64,
+	right: f64,
+}
+
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct TextResource {
+	value: String,
+	confidence: Option<f64>,
+	coordinates: Rectangle,
+	page_id: String,
 }
 
 
@@ -179,6 +204,35 @@ impl ApiClient {
 			let file_name = format!("{}-{}{}", document_id, page_nr, extension);
 			println!("Downloading {}", file_name);
 			download_file(&file.attributes.url, &file_name);
+		};
+	}
+
+
+	fn get_tokens(&self, document_id: u64) {
+		let url = format!("{}/v2/documents/{}/recognitions", self.base_url, document_id);
+		let response = match self.client.get(url).send() {
+			Ok(res) => res,
+			Err(err) => {
+				println!("Unable to retrieve document {}.\n\n{}", document_id, err);
+				exit(1);
+			}
+		};
+
+		if response.status() != StatusCode::OK {
+			println!("Request failed with status code {}.", response.status());
+			exit(1);
+		}
+
+		let content: JsonApiResponse<TextResource> = match response.json() {
+			Ok(payload) => payload,
+			Err(err) => {
+				println!("Unable to parse response. {}", err);
+				exit(1);
+			}
+		};
+
+		for tk in content.data.iter() {
+			println!("{}", tk.attributes.value);
 		};
 	}
 }
