@@ -5,7 +5,7 @@ use profile::{get_default_profile, load_profile, print_profiles};
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 
-use reqwest::blocking::Client;
+use reqwest::blocking::{Client, Response};
 use reqwest::{header, StatusCode};
 use std::fs::File;
 use std::process::exit;
@@ -31,6 +31,12 @@ enum Commands {
     },
     /// Download the source file of a document
     File {
+        /// Id of the document
+        #[arg(short, long)]
+        document_id: u64,
+    },
+    /// Download the OCR tokens of a document
+    Tokens {
         /// Id of the document
         #[arg(short, long)]
         document_id: u64,
@@ -62,6 +68,7 @@ fn main() {
     match &cli.command {
         Some(Commands::Images { document_id }) => api_client.get_images(*document_id),
         Some(Commands::File { document_id }) => api_client.get_source_files(*document_id),
+        Some(Commands::Tokens { document_id }) => api_client.get_tokens(*document_id),
         Some(Commands::Config { command }) => match command {
             Some(ConfigCommands::List) => print_profiles(),
             None => {}
@@ -75,6 +82,22 @@ struct FileResource {
     url: String,
     mime_type: String,
     file_type: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct Rectangle {
+    top: f64,
+    bottom: f64,
+    left: f64,
+    right: f64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct TextResource {
+    value: String,
+    confidence: Option<f64>,
+    coordinates: Rectangle,
+    page_id: String,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -129,6 +152,23 @@ impl ApiClient {
         }
     }
 
+    fn get(&self, url: String) -> Response {
+        let response = match self.client.get(url).send() {
+            Ok(res) => res,
+            Err(err) => {
+                println!("Unable to send request.\n\n{}", err);
+                exit(1);
+            }
+        };
+
+        if response.status() != StatusCode::OK {
+            println!("Request failed with status code {}.", response.status());
+            exit(1);
+        }
+
+        return response;
+    }
+
     fn get_images(&self, document_id: u64) {
         self.get_files("color_jpeg", document_id);
     }
@@ -138,22 +178,10 @@ impl ApiClient {
     }
 
     fn get_files(&self, file_type: &str, document_id: u64) {
-        let url = format!(
+        let response = self.get(format!(
             "{}/v2/files/?filter[record_id]={}&extra_fields[files]=url",
             self.base_url, document_id
-        );
-        let response = match self.client.get(url).send() {
-            Ok(res) => res,
-            Err(err) => {
-                println!("Unable to retrieve document {}.\n\n{}", document_id, err);
-                exit(1);
-            }
-        };
-
-        if response.status() != StatusCode::OK {
-            println!("Request failed with status code {}.", response.status());
-            exit(1);
-        }
+        ));
 
         let content: JsonApiResponse<FileResource> = match response.json() {
             Ok(payload) => payload,
@@ -178,6 +206,43 @@ impl ApiClient {
             let file_name = format!("{}-{}{}", document_id, page_nr, extension);
             println!("Downloading {}", file_name);
             download_file(&file.attributes.url, &file_name);
+        }
+    }
+
+    fn get_tokens(&self, document_id: u64) {
+        let response = self.get(format!(
+            "{}/v2/documents/{}/recognitions",
+            self.base_url, document_id
+        ));
+
+        let content: JsonApiResponse<TextResource> = match response.json() {
+            Ok(payload) => payload,
+            Err(err) => {
+                println!("Unable to parse response. {}", err);
+                exit(1);
+            }
+        };
+
+        if content.data.is_empty() {
+            println!("Document {} does not exist.", document_id);
+            exit(1);
+        }
+
+        println!(
+            "{: <30} {:.8} {:.8} {:.8} {:.8} {:.8}",
+            "value", "confidence", "top", "bottom", "left", "right"
+        );
+
+        for tk in content.data.iter() {
+            println!(
+                "{: <30} {:.8} {:.8} {:.8} {:.8} {:.8}",
+                tk.attributes.value,
+                tk.attributes.confidence.unwrap_or(0.0),
+                tk.attributes.coordinates.top,
+                tk.attributes.coordinates.bottom,
+                tk.attributes.coordinates.left,
+                tk.attributes.coordinates.right,
+            );
         }
     }
 }
