@@ -1,0 +1,12 @@
+[package]
+name = "pp"
+version = "0.1.0"
+authors = ["Patrick Winter <patrickwinter@posteo.ch>"]
+edition = "2021"
+
+[dependencies]
+clap = { version = "^4.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+reqwest = { version = "0.11.12", features = ["blocking", "json"] }
+home = "0.5.4"
