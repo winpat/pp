@@ -8,5 +8,6 @@ pkgs.mkShell {
     pkgs.openssl.dev
     pkgs.pkgconfig
     pkgs.rustfmt
+    pkgs.clippy
   ];
 }
