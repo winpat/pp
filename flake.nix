@@ -28,7 +28,7 @@
           lockFile = ./Cargo.lock;
         };
         buildInputs = deps;
-        nativeBuildInputs = [ pkgs.pkgconfig ];
+        nativeBuildInputs = [ pkgs.pkg-config ];
       };
       packages.x86_64-linux.default = self.packages.x86_64-linux.pp;
 
