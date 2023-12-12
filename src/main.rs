@@ -118,6 +118,11 @@ struct TextResource {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct DocumentAttributes {
+    tenant_id: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Resource<R> {
     id: String,
     attributes: R,
@@ -126,6 +131,11 @@ struct Resource<R> {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct JsonApiResponse<R> {
     data: Vec<Resource<R>>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct JsonApiResourceResponse<R> {
+    data: R,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -324,5 +334,12 @@ impl ApiClient {
             println!("Request failed with status code {}.", response.status());
             exit(1);
         }
+
+        let response_data: JsonApiResourceResponse<Resource<DocumentAttributes>> =
+            response.json().expect("Unable to parse API response.");
+        println!(
+            "Upload document {} to tenant {}.",
+            response_data.data.id, response_data.data.attributes.tenant_id
+        );
     }
 }
