@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use base64::{engine::general_purpose, Engine as _};
 use reqwest::blocking::{Client, Response};
 use reqwest::{header, StatusCode};
-use std::fs;
 use std::fs::File;
 use std::process::exit;
 
@@ -95,22 +94,40 @@ fn main() {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct FileResource {
+struct ResourceRequest<A> {
+    data: Resource<A>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct ResourceResponse<A> {
+    data: Resource<A>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct ResourceArrayResponse<A> {
+    data: Vec<Resource<A>>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct Resource<A> {
+    #[serde(rename = "type")]
+    type_: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+
+    attributes: A,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct FileAttributes {
     url: String,
     mime_type: String,
     file_type: String,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct Rectangle {
-    top: f64,
-    bottom: f64,
-    left: f64,
-    right: f64,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct TextResource {
+struct TextAttributes {
     value: String,
     confidence: Option<f64>,
     coordinates: Rectangle,
@@ -123,34 +140,6 @@ struct DocumentAttributes {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct Resource<R> {
-    id: String,
-    attributes: R,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct JsonApiResponse<R> {
-    data: Vec<Resource<R>>,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct JsonApiResourceResponse<R> {
-    data: R,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct JsonApiRequest<R> {
-    data: R,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct DocumentResource<A> {
-    #[serde(rename = "type")]
-    type_: String,
-    attributes: A,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct DocumentCreateAttributes {
     classification_scope: Option<Vec<String>>,
     files: Vec<DocumentFile>,
@@ -160,6 +149,14 @@ struct DocumentCreateAttributes {
 struct DocumentFile {
     file_name: String,
     base64_file: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct Rectangle {
+    top: f64,
+    bottom: f64,
+    left: f64,
+    right: f64,
 }
 
 fn download_file(url: &str, filename: &str) {
@@ -230,7 +227,7 @@ impl ApiClient {
             self.base_url, document_id
         ));
 
-        let content: JsonApiResponse<FileResource> = match response.json() {
+        let content: ResourceArrayResponse<FileAttributes> = match response.json() {
             Ok(payload) => payload,
             Err(err) => {
                 println!("Unable to parse response. {}", err);
@@ -262,7 +259,7 @@ impl ApiClient {
             self.base_url, document_id
         ));
 
-        let content: JsonApiResponse<TextResource> = match response.json() {
+        let content: ResourceArrayResponse<TextAttributes> = match response.json() {
             Ok(payload) => payload,
             Err(err) => {
                 println!("Unable to parse response. {}", err);
@@ -307,11 +304,12 @@ impl ApiClient {
 
         let encoded = general_purpose::STANDARD.encode(&buffer);
 
-        let payload: JsonApiRequest<DocumentResource<DocumentCreateAttributes>> = JsonApiRequest {
-            data: DocumentResource {
+        let payload = ResourceRequest {
+            data: Resource {
+                id: None,
                 type_: "documents".to_string(),
                 attributes: DocumentCreateAttributes {
-                    classification_scope: classification_scope,
+                    classification_scope,
                     files: vec![DocumentFile {
                         file_name: file_name,
                         base64_file: encoded,
@@ -335,11 +333,12 @@ impl ApiClient {
             exit(1);
         }
 
-        let response_data: JsonApiResourceResponse<Resource<DocumentAttributes>> =
+        let response_data: ResourceResponse<DocumentAttributes> =
             response.json().expect("Unable to parse API response.");
         println!(
             "Upload document {} to tenant {}.",
-            response_data.data.id, response_data.data.attributes.tenant_id
+            response_data.data.id.unwrap(),
+            response_data.data.attributes.tenant_id
         );
     }
 }
