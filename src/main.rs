@@ -47,6 +47,10 @@ enum Commands {
     Upload {
         /// File path
         file_path: String,
+
+        /// Allowed document types
+        #[arg(short, long, value_delimiter = ',', num_args = 1..)]
+        classification_scope: Option<Vec<String>>,
     },
     Config {
         #[command(subcommand)]
@@ -72,11 +76,14 @@ fn main() {
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
-    match &cli.command {
-        Some(Commands::Upload { file_path }) => api_client.upload_document(file_path),
-        Some(Commands::Images { document_id }) => api_client.get_images(*document_id),
-        Some(Commands::File { document_id }) => api_client.get_source_files(*document_id),
-        Some(Commands::Tokens { document_id }) => api_client.get_tokens(*document_id),
+    match cli.command {
+        Some(Commands::Upload {
+            file_path,
+            classification_scope,
+        }) => api_client.upload_document(file_path, classification_scope),
+        Some(Commands::Images { document_id }) => api_client.get_images(document_id),
+        Some(Commands::File { document_id }) => api_client.get_source_files(document_id),
+        Some(Commands::Tokens { document_id }) => api_client.get_tokens(document_id),
         Some(Commands::Config { command }) => match command {
             Some(ConfigCommands::List) => print_profiles(),
             None => {}
@@ -133,6 +140,7 @@ struct DocumentResource<A> {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct DocumentCreateAttributes {
+    classification_scope: Option<Vec<String>>,
     files: Vec<DocumentFile>,
 }
 
@@ -277,16 +285,20 @@ impl ApiClient {
         }
     }
 
-    fn upload_document(&self, file_path: &String) {
-        let content = fs::read_to_string(file_path).expect("Can't read input file.");
-        let encoded = general_purpose::STANDARD.encode(content);
+    fn upload_document(&self, file_path: String, classification_scope: Option<Vec<String>>) {
+        let mut file = File::open(&file_path).expect("Can't open file.");
+        let mut buffer: Vec<u8> = Vec::new();
+        file.read_to_end(&mut buffer).expect("Unable to read file.");
+
+        let encoded = general_purpose::STANDARD.encode(&buffer);
 
         let payload: JsonApiRequest<DocumentResource<DocumentCreateAttributes>> = JsonApiRequest {
             data: DocumentResource {
                 type_: "documents".to_string(),
                 attributes: DocumentCreateAttributes {
+                    classification_scope: classification_scope,
                     files: vec![DocumentFile {
-                        name: file_path.to_string(),
+                        name: file_path,
                         base64_file: encoded,
                     }],
                 },
