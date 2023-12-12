@@ -12,6 +12,7 @@ Commands:
   images  Download the images of a document
   file    Download the source file of a document
   tokens  Download the OCR tokens of a document
+  upload  Upload document
   config
   help    Print this message or the help of the given subcommand(s)
 

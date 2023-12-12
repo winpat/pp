@@ -5,8 +5,10 @@ use profile::{get_default_profile, load_profile, print_profiles};
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 
+use base64::{engine::general_purpose, Engine as _};
 use reqwest::blocking::{Client, Response};
 use reqwest::{header, StatusCode};
+use std::fs;
 use std::fs::File;
 use std::process::exit;
 
@@ -41,6 +43,11 @@ enum Commands {
         #[arg(short, long)]
         document_id: u64,
     },
+    /// Upload document
+    Upload {
+        /// File path
+        file_path: String,
+    },
     Config {
         #[command(subcommand)]
         command: Option<ConfigCommands>,
@@ -66,6 +73,7 @@ fn main() {
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
     match &cli.command {
+        Some(Commands::Upload { file_path }) => api_client.upload_document(file_path),
         Some(Commands::Images { document_id }) => api_client.get_images(*document_id),
         Some(Commands::File { document_id }) => api_client.get_source_files(*document_id),
         Some(Commands::Tokens { document_id }) => api_client.get_tokens(*document_id),
@@ -109,6 +117,29 @@ struct Resource<R> {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct JsonApiResponse<R> {
     data: Vec<Resource<R>>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct JsonApiRequest<R> {
+    data: R,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct DocumentResource<A> {
+    #[serde(rename = "type")]
+    type_: String,
+    attributes: A,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct DocumentCreateAttributes {
+    files: Vec<DocumentFile>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct DocumentFile {
+    name: String,
+    base64_file: String,
 }
 
 fn download_file(url: &str, filename: &str) {
@@ -243,6 +274,37 @@ impl ApiClient {
                 tk.attributes.coordinates.left,
                 tk.attributes.coordinates.right,
             );
+        }
+    }
+
+    fn upload_document(&self, file_path: &String) {
+        let content = fs::read_to_string(file_path).expect("Can't read input file.");
+        let encoded = general_purpose::STANDARD.encode(content);
+
+        let payload: JsonApiRequest<DocumentResource<DocumentCreateAttributes>> = JsonApiRequest {
+            data: DocumentResource {
+                type_: "documents".to_string(),
+                attributes: DocumentCreateAttributes {
+                    files: vec![DocumentFile {
+                        name: file_path.to_string(),
+                        base64_file: encoded,
+                    }],
+                },
+            },
+        };
+
+        let url = format!("{}/v2/documents/", self.base_url);
+        let response = match self.client.post(url).json(&payload).send() {
+            Ok(res) => res,
+            Err(err) => {
+                println!("Unable to send request.\n\n{}", err);
+                exit(1);
+            }
+        };
+
+        if response.status() != StatusCode::OK {
+            println!("Request failed with status code {}.", response.status());
+            exit(1);
         }
     }
 }
