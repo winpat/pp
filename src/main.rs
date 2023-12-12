@@ -53,10 +53,20 @@ enum Commands {
         #[arg(short, long, value_delimiter = ',', num_args = 1..)]
         classification_scope: Option<Vec<String>>,
     },
+    Document {
+        #[command(subcommand)]
+        command: Option<DocumentCommands>,
+    },
     Config {
         #[command(subcommand)]
         command: Option<ConfigCommands>,
     },
+}
+
+#[derive(Subcommand)]
+enum DocumentCommands {
+    /// List documents
+    List { document_ids: Vec<String> },
 }
 
 #[derive(Subcommand)]
@@ -85,6 +95,12 @@ fn main() {
         Some(Commands::Images { document_id }) => api_client.get_images(document_id),
         Some(Commands::File { document_id }) => api_client.get_source_files(document_id),
         Some(Commands::Tokens { document_id }) => api_client.get_tokens(document_id),
+        Some(Commands::Document { command }) => match command {
+            Some(DocumentCommands::List { document_ids }) => {
+                api_client.list_documents(document_ids)
+            }
+            None => {}
+        },
         Some(Commands::Config { command }) => match command {
             Some(ConfigCommands::List) => print_profiles(),
             None => {}
@@ -137,6 +153,14 @@ struct TextAttributes {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct DocumentAttributes {
     tenant_id: String,
+	status: String,
+	workflow_step: String,
+	workflow_status: String,
+	validation_required: bool,
+	not_for_training: bool,
+	created_at: String,
+	updated_at: String,
+	document_type_identifier: String,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -340,5 +364,30 @@ impl ApiClient {
             response_data.data.id.unwrap(),
             response_data.data.attributes.tenant_id
         );
+    }
+
+    fn list_documents(&self, document_ids: Vec<String>) {
+        let url = format!(
+            "{}/v2/documents/?filter[id][eq]={}",
+            self.base_url,
+            document_ids.join(",")
+        );
+        let response = self.get(url);
+        let content: ResourceArrayResponse<DocumentAttributes> = match response.json() {
+            Ok(payload) => payload,
+            Err(err) => {
+                println!("Unable to parse response. {}", err);
+                exit(1);
+            }
+        };
+
+        for doc in content.data.iter() {
+			println!("{}", &doc.id.unwrap());
+		}
+        // for doc in content.data.iter() {
+        //     if let Some(doc_id) = &doc.id {
+        //         println!("{}", doc_id);
+        //     }
+        // }
     }
 }
