@@ -3,7 +3,9 @@ mod profile;
 use clap::{Parser, Subcommand};
 use profile::{get_default_profile, load_profile, print_profiles};
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::io::prelude::*;
+use std::path::PathBuf;
 
 use base64::{engine::general_purpose, Engine as _};
 use reqwest::blocking::{Client, Response};
@@ -46,7 +48,7 @@ enum Commands {
     /// Upload document
     Upload {
         /// File path
-        file_path: String,
+        file_path: PathBuf,
 
         /// Allowed document types
         #[arg(short, long, value_delimiter = ',', num_args = 1..)]
@@ -146,7 +148,7 @@ struct DocumentCreateAttributes {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct DocumentFile {
-    name: String,
+    file_name: String,
     base64_file: String,
 }
 
@@ -174,11 +176,7 @@ impl ApiClient {
         let mut headers = header::HeaderMap::new();
         headers.insert(
             "Content-Type",
-            header::HeaderValue::from_static("application/json"),
-        );
-        headers.insert(
-            "Accept",
-            header::HeaderValue::from_static("application/json"),
+            header::HeaderValue::from_static("application/vnd.api+json"),
         );
 
         let mut auth_value = header::HeaderValue::from_str(token).unwrap();
@@ -285,7 +283,14 @@ impl ApiClient {
         }
     }
 
-    fn upload_document(&self, file_path: String, classification_scope: Option<Vec<String>>) {
+    fn upload_document(&self, file_path: PathBuf, classification_scope: Option<Vec<String>>) {
+        let file_name = file_path
+            .file_name()
+            .expect("Unable to determine file name.")
+            .to_os_string()
+            .into_string()
+            .unwrap();
+
         let mut file = File::open(&file_path).expect("Can't open file.");
         let mut buffer: Vec<u8> = Vec::new();
         file.read_to_end(&mut buffer).expect("Unable to read file.");
@@ -298,15 +303,16 @@ impl ApiClient {
                 attributes: DocumentCreateAttributes {
                     classification_scope: classification_scope,
                     files: vec![DocumentFile {
-                        name: file_path,
+                        file_name: file_name,
                         base64_file: encoded,
                     }],
                 },
             },
         };
+        let body = serde_json::to_string(&payload).expect("Unable to serialize request.");
 
         let url = format!("{}/v2/documents/", self.base_url);
-        let response = match self.client.post(url).json(&payload).send() {
+        let response = match self.client.post(&url).body(body).send() {
             Ok(res) => res,
             Err(err) => {
                 println!("Unable to send request.\n\n{}", err);
@@ -314,7 +320,7 @@ impl ApiClient {
             }
         };
 
-        if response.status() != StatusCode::OK {
+        if response.status() != StatusCode::CREATED {
             println!("Request failed with status code {}.", response.status());
             exit(1);
         }
