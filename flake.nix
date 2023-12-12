@@ -9,6 +9,7 @@
     let pkgs = nixpkgs.legacyPackages.x86_64-linux;
         deps = [
           pkgs.rustc
+          pkgs.rust-analyzer
           pkgs.cargo
           pkgs.rustfmt
           pkgs.openssl
